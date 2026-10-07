@@ -58,7 +58,9 @@ def create_signed_network(n_nations, density=1.0, seed=None):
     G.add_nodes_from(range(n_nations))
 
     all_pairs = list(itertools.combinations(range(n_nations), 2))
-    n_edges = max(1, int(density * len(all_pairs)))
+    if not all_pairs:
+        return G                      # fewer than 2 nations: no relationships possible
+    n_edges = min(len(all_pairs), max(1, int(density * len(all_pairs))))
     chosen_pairs = rng.sample(all_pairs, n_edges)
 
     for (i, j) in chosen_pairs:
@@ -144,9 +146,17 @@ def step(G, triads, rng, noise=0.0):
 # ---------------------------------------------------------------------------
 
 def run_simulation(n_nations=20, density=1.0, noise=0.0, max_steps=20000,
-                    check_every=50, seed=None, converge_patience=2000):
+                    check_every=50, seed=None, converge_patience=2000, G=None):
     """
     Run the structural balance simulation and track balance ratio over time.
+
+    Parameters
+    ----------
+    G : networkx.Graph or None
+        An existing signed network to simulate on (for example the real-data
+        network from data_pipeline). It is modified in place, so pass
+        G.copy() to keep the original. If None, a random network is created
+        from n_nations, density and seed.
 
     Returns
     -------
@@ -156,12 +166,14 @@ def run_simulation(n_nations=20, density=1.0, noise=0.0, max_steps=20000,
                 and stayed there for `converge_patience` steps
     """
     rng = random.Random(seed)
-    G = create_signed_network(n_nations, density=density, seed=seed)
+    if G is None:
+        G = create_signed_network(n_nations, density=density, seed=seed)
     triads = get_triads(G)
 
     history = []
     steps_fully_balanced = 0
     converged = False
+    t = 0                                 # defined up front so max_steps=0 is safe
 
     for t in range(max_steps):
         step(G, triads, rng, noise=noise)
