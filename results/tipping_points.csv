@@ -1,0 +1,17 @@
+experiment,network,inertia,noise_at_50pct_settling,percentile
+noise,day1_n8,False,0.01131578947368421,
+noise,day1_n8,True,0.02,
+threshold,day1_n8,False,0.011904761904761904,40
+threshold,day1_n8,True,0.02,40
+threshold,day1_n8,False,0.01131578947368421,50
+threshold,day1_n8,True,0.02,50
+threshold,day1_n8,False,0.012045454545454545,60
+threshold,day1_n8,True,0.02,60
+noise,day2_n8,False,0.008947368421052631,
+noise,day2_n8,True,0.01681818181818182,
+threshold,day2_n8,False,0.008125,40
+threshold,day2_n8,True,0.016785714285714286,40
+threshold,day2_n8,False,0.008947368421052631,50
+threshold,day2_n8,True,0.01681818181818182,50
+threshold,day2_n8,False,0.008571428571428572,60
+threshold,day2_n8,True,0.01611111111111111,60
