@@ -107,15 +107,33 @@ def balance_ratio(G, triads=None):
 # 3. UPDATE RULE (local triad dynamics with noise)
 # ---------------------------------------------------------------------------
 
-def step(G, triads, rng, noise=0.0):
+def edge_resists(G, edge, rng):
+    """
+    True if this relationship holds firm against a flip this step.
+
+    Each edge may carry an 'inertia' in [0, 1] (set by the data pipeline from
+    how much real-world coverage the pair has). An edge with inertia 0.8
+    resists 80% of the flips that would otherwise change it. A missing or zero
+    inertia never resists, and draws no random number, so zero-inertia runs
+    reproduce the baseline model exactly for the same seed.
+    """
+    inertia = G[edge[0]][edge[1]].get('inertia', 0.0)
+    return inertia > 0 and rng.random() < inertia
+
+
+def step(G, triads, rng, noise=0.0, use_inertia=False):
     """
     Perform one update step:
     - Pick a random closed triad.
-    - If unbalanced, flip a random edge in it towards balance
-      (with probability 1-noise), or flip it AWAY from balance /
-      randomly with probability `noise` (models irrational/random
-      geopolitical shocks).
-    - If balanced, do nothing this step (no forced churn).
+    - With probability `noise`, flip a random edge of it regardless of
+      balance (an irrational or random shock).
+    - Otherwise, if the triad is unbalanced, flip one random edge, which
+      always restores balance (any single flip changes the sign product).
+    - If the triad is balanced, do nothing.
+
+    If use_inertia is True, the edge chosen to flip may resist (see
+    edge_resists): well-established relationships are harder to break, whether
+    the pressure comes from the balance rule or from a random shock.
 
     Returns True if an edge was flipped, else False.
     """
@@ -125,18 +143,18 @@ def step(G, triads, rng, noise=0.0):
     i, j, k = rng.choice(triads)
 
     if rng.random() < noise:
-        # random shock: flip a random edge of the triad regardless of balance
         edge = rng.choice([(i, j), (j, k), (i, k)])
+        if use_inertia and edge_resists(G, edge, rng):
+            return False
         G[edge[0]][edge[1]]['sign'] *= -1
         return True
 
     if is_balanced(G, (i, j, k)):
         return False  # nothing to resolve
 
-    # Unbalanced triad -> flip ONE edge to restore balance.
-    # Flipping any single edge in an unbalanced triad makes it balanced
-    # (since the sign product must become +1), so pick one at random.
     edge = rng.choice([(i, j), (j, k), (i, k)])
+    if use_inertia and edge_resists(G, edge, rng):
+        return False
     G[edge[0]][edge[1]]['sign'] *= -1
     return True
 
@@ -146,7 +164,8 @@ def step(G, triads, rng, noise=0.0):
 # ---------------------------------------------------------------------------
 
 def run_simulation(n_nations=20, density=1.0, noise=0.0, max_steps=20000,
-                    check_every=50, seed=None, converge_patience=2000, G=None):
+                    check_every=50, seed=None, converge_patience=2000, G=None,
+                    use_inertia=False):
     """
     Run the structural balance simulation and track balance ratio over time.
 
@@ -157,6 +176,9 @@ def run_simulation(n_nations=20, density=1.0, noise=0.0, max_steps=20000,
         network from data_pipeline). It is modified in place, so pass
         G.copy() to keep the original. If None, a random network is created
         from n_nations, density and seed.
+    use_inertia : bool
+        If True, edges resist flipping according to their 'inertia' attribute
+        (see step). Has no effect on edges without one.
 
     Returns
     -------
@@ -176,7 +198,7 @@ def run_simulation(n_nations=20, density=1.0, noise=0.0, max_steps=20000,
     t = 0                                 # defined up front so max_steps=0 is safe
 
     for t in range(max_steps):
-        step(G, triads, rng, noise=noise)
+        step(G, triads, rng, noise=noise, use_inertia=use_inertia)
 
         if t % check_every == 0:
             br = balance_ratio(G, triads)
