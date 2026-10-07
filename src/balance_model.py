@@ -196,47 +196,12 @@ def run_simulation(n_nations=20, density=1.0, noise=0.0, max_steps=20000,
 
 
 # ---------------------------------------------------------------------------
-# 5. BLOC DETECTION (after convergence, how many blocs formed?)
+# 5. BLOC DETECTION (moved to blocs.py)
 # ---------------------------------------------------------------------------
-
-def detect_blocs(G):
-    """
-    Once a network is (fully or mostly) balanced, it should split into
-    at most 2 factions such that all intra-faction edges are + and all
-    inter-faction edges are -. We detect this via a simple BFS/coloring
-    over the POSITIVE edges only: nodes connected by a + edge share a
-    faction; a - edge means they should be in different factions.
-
-    Returns a dict {node: faction_id} and the number of distinct factions
-    found. This is a heuristic — if the network never fully balanced,
-    the split may be inconsistent (which is itself an interesting result).
-    """
-    faction = {}
-    next_id = 0
-
-    for node in G.nodes():
-        if node in faction:
-            continue
-        # BFS assigning factions based on edge sign
-        faction[node] = next_id
-        queue = [node]
-        while queue:
-            cur = queue.pop()
-            for nbr in G.neighbors(cur):
-                sign = G[cur][nbr]['sign']
-                target_faction = faction[cur] if sign == 1 else _other_faction(faction[cur], next_id)
-                if nbr not in faction:
-                    faction[nbr] = target_faction
-                    queue.append(nbr)
-        next_id += 1
-
-    n_factions = len(set(faction.values()))
-    return faction, n_factions
-
-
-def _other_faction(fid, max_id):
-    """Helper: crude 2-faction toggle (0<->1) within a connected component."""
-    return 1 - fid if fid in (0, 1) else fid + 1
+# analyse_blocs() tests properly whether the final network splits into at most
+# two opposing groups; detect_blocs() is kept as a thin wrapper so existing
+# scripts still work.
+from blocs import analyse_blocs, detect_blocs  # noqa: E402,F401
 
 
 if __name__ == "__main__":
