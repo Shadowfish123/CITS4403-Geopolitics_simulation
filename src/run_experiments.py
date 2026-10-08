@@ -10,6 +10,11 @@ noise      Does the network settle into balance as random shocks (noise)
            increase, with and without relationship inertia? Also records how
            long settling takes and whether the final network really splits
            into at most two blocs.
+control    Five arms on the same seeds: no inertia; real inertia; inertia values
+           shuffled across relationships; the same average inertia on every
+           relationship; and shuffled signs with no inertia. Separates "which
+           relationships are entrenched" from "the network is simply more
+           resistant", and tests whether the real signs matter for outcomes.
 initial    Permutation test: are the real-data signs more (or less) balanced
            than the same relationships with the signs shuffled at random?
 density    Remove a fraction of the relationships and check how often a run that
@@ -56,6 +61,7 @@ NOISE_LEVELS = [0.0, 0.002, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05]
 THRESHOLD_NOISE_LEVELS = [0.0, 0.005, 0.01, 0.015, 0.02, 0.03]
 DENSITY_FRACTIONS = [1.0, 0.85, 0.7, 0.55, 0.4]
 PERCENTILES = [40, 50, 60]
+CONTROL_NOISE_LEVELS = [0.0, 0.005, 0.01, 0.015, 0.02, 0.03]
 MIN_SETTLED_FOR_TIME_PLOT = 10    # hide mean times based on fewer settled runs than this
 
 
@@ -225,6 +231,57 @@ def threshold_experiment(csv_path, n_countries, percentiles, noise_levels, repea
     return rows, raw
 
 
+def _shuffled_attribute(G, attribute, rng):
+    """Copy of G with the values of one edge attribute permuted across edges."""
+    H = G.copy()
+    edges = list(H.edges())
+    values = [H[u][v][attribute] for u, v in edges]
+    rng.shuffle(values)
+    for (u, v), value in zip(edges, values):
+        H[u][v][attribute] = value
+    return H
+
+
+def shuffled_inertia(G, rng):
+    return _shuffled_attribute(G, "inertia", rng)
+
+
+def shuffled_signs(G, rng):
+    return _shuffled_attribute(G, "sign", rng)
+
+
+def uniform_inertia(G, rng=None):
+    """Copy of G where every edge has the network's mean inertia."""
+    H = G.copy()
+    mean = statistics.fmean(d["inertia"] for _, _, d in H.edges(data=True))
+    for u, v in H.edges():
+        H[u][v]["inertia"] = mean
+    return H
+
+
+# (label, use_inertia, how to build the starting network from the real one)
+CONTROL_ARMS = [
+    ("No inertia", False, lambda G, rng: G),
+    ("Real inertia", True, lambda G, rng: G),
+    ("Shuffled inertia", True, shuffled_inertia),
+    ("Uniform inertia (same mean)", True, uniform_inertia),
+    ("Shuffled signs, no inertia", False, shuffled_signs),
+]
+
+
+def control_experiment(G0, noise_levels, repeats, workers, max_steps, patience, base_seed):
+    """Settling rate vs noise for each control arm, paired on the simulation seeds."""
+    rows = []
+    for noise in noise_levels:
+        for label, use_inertia, build in CONTROL_ARMS:
+            tasks = []
+            for i in range(repeats):
+                start = build(G0, random.Random(base_seed + 5000 + i))
+                tasks.append((start, noise, use_inertia, base_seed + i, max_steps, patience))
+            rows.append({"arm": label, "noise": noise, **summarise_condition(run_many(tasks, workers))})
+    return rows
+
+
 def fmt_point(x):
     """Readable tipping point: a number, or a note if the rate never fell below 50%."""
     return "never fell below 50% in the tested range" if x is None else f"{x:.4f}"
@@ -311,6 +368,25 @@ def plot_noise(rows, title, path):
     plt.close(fig)
 
 
+def plot_control(rows, title, path):
+    fig, ax = plt.subplots(figsize=(8, 5))
+    style = {"No inertia": ("tab:blue", "-"), "Real inertia": ("tab:orange", "-"),
+             "Shuffled inertia": ("tab:green", "--"), "Uniform inertia (same mean)": ("tab:red", "--"),
+             "Shuffled signs, no inertia": ("tab:gray", ":")}
+    for label, _, _ in CONTROL_ARMS:
+        sub = sorted((r for r in rows if r["arm"] == label), key=lambda r: r["noise"])
+        colour, line = style[label]
+        ax.plot([r["noise"] for r in sub], [r["conv_rate"] for r in sub], line, marker="o",
+                color=colour, label=label)
+    ax.set(xlabel="Noise level", ylabel="Fraction of runs that settled", title=title,
+           ylim=(-0.05, 1.05))
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
 def plot_density(rows, title, path):
     fig, ax = plt.subplots(figsize=(6.5, 4.5))
     xs = [r["density"] for r in rows]
@@ -373,16 +449,18 @@ def main():
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--seed", type=int, default=100)
     parser.add_argument("--out", default="results")
-    parser.add_argument("--only", nargs="+", choices=["noise", "density", "threshold", "initial"],
-                        default=["noise", "density", "threshold", "initial"])
+    parser.add_argument("--only", nargs="+", choices=["noise", "density", "threshold", "initial", "control"],
+                        default=["noise", "density", "threshold", "initial", "control"])
     parser.add_argument("--quick", action="store_true",
                         help="small settings to check everything runs")
     args = parser.parse_args()
 
     noise_levels, thr_noise = NOISE_LEVELS, THRESHOLD_NOISE_LEVELS
+    control_noise = CONTROL_NOISE_LEVELS
     fractions, percentiles, repeats = DENSITY_FRACTIONS, PERCENTILES, args.repeats
     if args.quick:
         noise_levels, thr_noise = [0.0, 0.01, 0.02], [0.0, 0.01]
+        control_noise = [0.0, 0.01]
         fractions, percentiles, repeats = [1.0, 0.6], [50], 5
 
     os.makedirs(args.out, exist_ok=True)
@@ -430,6 +508,17 @@ def main():
                              os.path.join(args.out, f"density_{tag}.png"))
                 print(f"   [{time.time() - start:.0f}s] density done")
 
+            if "control" in args.only:
+                rows = control_experiment(G0, control_noise, repeats, args.workers,
+                                          args.max_steps, args.patience, args.seed)
+                write_csv(os.path.join(args.out, f"control_{tag}.csv"), rows)
+                plot_control(rows, f"Inertia and start-state controls ({tag}, {repeats} repeats)",
+                             os.path.join(args.out, f"control_{tag}.png"))
+                for label, _, _ in CONTROL_ARMS:
+                    cells = ", ".join(f"{r['noise']:g}: {r['conv_rate']:.2f}" for r in rows if r["arm"] == label)
+                    print(f"   {label}: settled at noise {cells}")
+                print(f"   [{time.time() - start:.0f}s] control done")
+
             if "threshold" in args.only:
                 rows, raw = threshold_experiment(csv_path, n, percentiles, thr_noise, repeats,
                                                  args.workers, args.max_steps, args.patience, args.seed)
@@ -442,7 +531,10 @@ def main():
                     summary.append({"experiment": "threshold", "network": tag, **t})
                 print(f"   [{time.time() - start:.0f}s] threshold done")
 
-    write_csv(os.path.join(args.out, "tipping_points.csv"), summary)
+    full = {"noise", "threshold"} <= set(args.only)
+    name = "tipping_points.csv" if full else "tipping_points_partial.csv"
+    if summary:
+        write_csv(os.path.join(args.out, name), summary)
     print(f"\nFinished in {time.time() - start:.0f}s. Files are in {args.out}/")
 
 
