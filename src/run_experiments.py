@@ -56,6 +56,7 @@ NOISE_LEVELS = [0.0, 0.002, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05]
 THRESHOLD_NOISE_LEVELS = [0.0, 0.005, 0.01, 0.015, 0.02, 0.03]
 DENSITY_FRACTIONS = [1.0, 0.85, 0.7, 0.55, 0.4]
 PERCENTILES = [40, 50, 60]
+MIN_SETTLED_FOR_TIME_PLOT = 10    # hide mean times based on fewer settled runs than this
 
 
 # ------------------------------------------------------------ small statistics
@@ -293,13 +294,14 @@ def plot_noise(rows, title, path):
         _errbar(ax1, xs, [r["conv_rate"] for r in sub], [r["conv_lo"] for r in sub],
                 [r["conv_hi"] for r in sub], color=colour, label=label)
         pts = [(r["noise"], r["mean_steps_converged"]) for r in sub
-               if not math.isnan(r["mean_steps_converged"])]
+               if r["conv_rate"] * r["repeats"] >= MIN_SETTLED_FOR_TIME_PLOT]
         if pts:
             ax2.plot([x for x, _ in pts], [y for _, y in pts], marker="o", color=colour, label=label)
     ax1.set(xlabel="Noise level", ylabel="Fraction of runs that settled",
             title="Settling rate (95% CI)", ylim=(-0.05, 1.05))
     ax2.set(xlabel="Noise level", ylabel="Mean steps to settle (settled runs only)",
-            title="Time to settle", yscale="log")
+            title=f"Time to settle (points with at least {MIN_SETTLED_FOR_TIME_PLOT} settled runs)",
+            yscale="log")
     for ax in (ax1, ax2):
         ax.grid(alpha=0.3)
         ax.legend()
