@@ -3,3 +3,4 @@ venv/
 __pycache__/
 .ipynb_checkpoints/
 data/raw_*.csv
+results_quick/
