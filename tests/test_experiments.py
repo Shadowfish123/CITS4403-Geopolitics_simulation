@@ -133,3 +133,47 @@ def test_permutation_test_preserves_the_edge_signs_of_the_input():
     before = sorted(G.edges(data="sign"))
     ex.initial_balance_test(G, n_perm=50, seed=0)
     assert sorted(G.edges(data="sign")) == before
+
+
+# ------------------------------------------------------------- control arms
+
+def inertia_network():
+    G = balanced_two_bloc_network()
+    for i, (u, v) in enumerate(sorted(G.edges())):
+        G[u][v]["inertia"] = 0.05 * (i + 1)
+    return G
+
+
+def test_shuffled_inertia_keeps_the_values_but_moves_them():
+    G = inertia_network()
+    H = ex.shuffled_inertia(G, random.Random(1))
+    assert sorted(d["inertia"] for *_, d in H.edges(data=True)) == \
+        sorted(d["inertia"] for *_, d in G.edges(data=True))
+    assert [H[u][v]["inertia"] for u, v in sorted(H.edges())] != \
+        [G[u][v]["inertia"] for u, v in sorted(G.edges())]
+    assert sorted(H.edges()) == sorted(G.edges())                # same structure
+    assert [d["sign"] for *_, d in H.edges(data=True)] == [d["sign"] for *_, d in G.edges(data=True)]
+
+
+def test_uniform_inertia_gives_every_edge_the_mean():
+    G = inertia_network()
+    mean = sum(d["inertia"] for *_, d in G.edges(data=True)) / G.number_of_edges()
+    H = ex.uniform_inertia(G)
+    assert all(d["inertia"] == pytest.approx(mean) for *_, d in H.edges(data=True))
+
+
+def test_shuffled_signs_keep_the_count_of_positive_edges():
+    G = inertia_network()
+    H = ex.shuffled_signs(G, random.Random(2))
+    assert sum(d["sign"] == 1 for *_, d in H.edges(data=True)) == \
+        sum(d["sign"] == 1 for *_, d in G.edges(data=True))
+    assert [d["inertia"] for *_, d in H.edges(data=True)] == [d["inertia"] for *_, d in G.edges(data=True)]
+    assert G[0][1]["sign"] == 1 and sorted(G.edges(data="sign"))[0][2] == 1   # input untouched
+
+
+def test_control_experiment_reports_every_arm_at_every_noise_level():
+    rows = ex.control_experiment(inertia_network(), [0.0, 0.01], repeats=3, workers=1,
+                                 max_steps=2000, patience=200, base_seed=5)
+    assert len(rows) == 2 * len(ex.CONTROL_ARMS)
+    assert {r["arm"] for r in rows} == {label for label, _, _ in ex.CONTROL_ARMS}
+    assert all(r["repeats"] == 3 for r in rows)
