@@ -1,0 +1,13 @@
+experiment,network,inertia,noise_at_50pct_settling,substrate
+noise,day1_n8,False,0.017843137254901963,geo
+noise,day1_n8,True,0.027088607594936708,geo
+noise,day1_n8,False,0.019166666666666665,random
+noise,day1_n8,True,0.027820512820512816,random
+noise,day1_n8,False,0.0115,real
+noise,day1_n8,True,0.018984375,real
+noise,day2_n8,False,0.012402597402597401,geo
+noise,day2_n8,True,0.022686567164179106,geo
+noise,day2_n8,False,0.011956521739130435,random
+noise,day2_n8,True,0.0225,random
+noise,day2_n8,False,0.008571428571428572,real
+noise,day2_n8,True,0.0165,real
