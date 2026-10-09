@@ -1,8 +1,4 @@
 """
-Geographically Gated Experiments
-=================================
-CITS4403 Research Project
-
 Runs the noise experiment of run_experiments.py on networks that geography has
 thinned, and adds the control arms needed to tell a *geography* effect apart
 from a plain reduction in the number of relationships.
@@ -188,3 +184,80 @@ def summarise_over_draws(per_draw):
     summary["draw_rate_min"] = min(rates)
     summary["draw_rate_max"] = max(rates)
     return summary
+
+
+# ---------------------------------------------------------------------------
+# 3. ONE SUBSTRATE ACROSS NOISE AND POSITION DRAWS
+# ---------------------------------------------------------------------------
+
+def substrate_sweep(G0, kind, noise_levels, draws, repeats, workers, max_steps,
+                    patience, base_seed, keep=DEFAULT_KEEP, space="plane",
+                    gate="hard", economy_scaling="fixed", r_min=None,
+                    use_inertia=False, extra=None):
+    """
+    Settling behaviour of one substrate: noise x position draw x dynamics seed.
+
+    The position draws are built once and reused for every noise level, so the
+    comparison between noise levels is paired on the map.
+
+    Returns
+    -------
+    rows : list of dict
+        One row per noise level, ready for a CSV.
+    raw : list of dict
+        One row per individual run.
+    """
+    rows, raw = [], []
+    networks = [
+        build_substrate(G0, kind, draw_seed=base_seed + draw, keep=keep,
+                        space=space, gate=gate,
+                        economy_scaling=economy_scaling, r_min=r_min)
+        for draw in range(draws)
+    ]
+    structure = structure_of(networks)
+    used_r_min = networks[0][3]
+
+    for noise in noise_levels:
+        per_draw = []
+        for draw, (H, positions, economy, _) in enumerate(networks):
+            tasks = [(H, noise, use_inertia, base_seed + 1000 * draw + i,
+                      max_steps, patience) for i in range(repeats)]
+            runs = ex.run_many(tasks, workers)
+            per_draw.append(runs)
+            raw += [{"substrate": kind, "noise": noise, "draw": draw,
+                     "inertia": use_inertia, "seed": base_seed + 1000 * draw + i,
+                     **(extra or {}), **record}
+                    for i, record in enumerate(runs)]
+        rows.append({"substrate": kind, "noise": noise, "inertia": use_inertia,
+                     "keep": keep, "space": space, "gate": gate,
+                     "economy": economy_scaling, "r_min": used_r_min,
+                     **(extra or {}), **structure, **summarise_over_draws(per_draw)})
+    return rows, raw
+
+
+# ---------------------------------------------------------------------------
+# 4. THE MAIN ARM: SUBSTRATES ACROSS NOISE
+# ---------------------------------------------------------------------------
+
+def noise_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
+                     patience, base_seed, keep=DEFAULT_KEEP, space="plane",
+                     gate="hard", economy_scaling="fixed", r_min=None):
+    """
+    Settling rate against noise for the real, randomly thinned and gated
+    networks, with and without relationship inertia.
+
+    The random arm is the control: it answers "is it geography, or is it just
+    fewer relationships?". The inertia arms answer "does inertia still raise
+    the noise the network can absorb once geography has thinned it?".
+    """
+    rows, raw = [], []
+    for use_inertia in (False, True):
+        for kind in SUBSTRATES:
+            r, w = substrate_sweep(
+                G0, kind, noise_levels, draws, repeats, workers, max_steps,
+                patience, base_seed, keep=keep, space=space, gate=gate,
+                economy_scaling=economy_scaling, r_min=r_min,
+                use_inertia=use_inertia)
+            rows += r
+            raw += w
+    return rows, raw
