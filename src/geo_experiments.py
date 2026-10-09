@@ -261,3 +261,71 @@ def noise_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
             rows += r
             raw += w
     return rows, raw
+
+
+# ---------------------------------------------------------------------------
+# 5. CONTROL ARMS: GATE, SPACE AND ECONOMY
+# ---------------------------------------------------------------------------
+
+def gate_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
+                    patience, base_seed, keep=DEFAULT_KEEP, space="plane",
+                    economy_scaling="fixed", r_min=None):
+    """
+    Hard gate against soft gate at the same number of relationships.
+
+    The hard gate makes a far relationship impossible; the soft gate only makes
+    it unlikely. If the two agree, the result is about how many short-range
+    relationships survive; if they disagree, long-range bridges matter.
+    """
+    rows, raw = [], []
+    for gate in ("hard", "soft"):
+        r, w = substrate_sweep(
+            G0, "geo", noise_levels, draws, repeats, workers, max_steps,
+            patience, base_seed, keep=keep, space=space, gate=gate,
+            economy_scaling=economy_scaling, r_min=r_min)
+        rows += r
+        raw += w
+    return rows, raw
+
+
+def space_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
+                     patience, base_seed, keep=DEFAULT_KEEP, gate="hard",
+                     economy_scaling="fixed", r_min=None):
+    """
+    Flat map against a map with no corners.
+
+    On a flat map the nations nearest the corners have fewer neighbours within
+    any radius, which is a property of the map rather than of geography in
+    general. The torus arm removes that boundary effect, so any difference is
+    the boundary, not the mechanism.
+    """
+    rows, raw = [], []
+    for space in ("plane", "torus"):
+        r, w = substrate_sweep(
+            G0, "geo", noise_levels, draws, repeats, workers, max_steps,
+            patience, base_seed, keep=keep, space=space, gate=gate,
+            economy_scaling=economy_scaling, r_min=r_min)
+        rows += r
+        raw += w
+    return rows, raw
+
+
+def economy_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
+                       patience, base_seed, keep=DEFAULT_KEEP, space="plane",
+                       gate="hard", r_min=None):
+    """
+    Two strong economies against a lognormal economy for every nation.
+
+    With two strong nations out of eight there is only one strong-strong pair,
+    so the fixed tiers keep the draws comparable; the random arm checks whether
+    the conclusion depends on that choice.
+    """
+    rows, raw = [], []
+    for scaling in ("fixed", "random"):
+        r, w = substrate_sweep(
+            G0, "geo", noise_levels, draws, repeats, workers, max_steps,
+            patience, base_seed, keep=keep, space=space, gate=gate,
+            economy_scaling=scaling, r_min=r_min)
+        rows += r
+        raw += w
+    return rows, raw
