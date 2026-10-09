@@ -265,3 +265,241 @@ def noise_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
             rows += r
             raw += w
     return rows, raw
+
+
+# ---------------------------------------------------------------------------
+# 5. CONTROL ARMS: GATE, SPACE AND ECONOMY
+# ---------------------------------------------------------------------------
+
+def gate_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
+                    patience, base_seed, keep=DEFAULT_KEEP, space="plane",
+                    economy_scaling="fixed", r_min=None):
+    """
+    Hard gate against soft gate at the same number of relationships.
+
+    The hard gate makes a far relationship impossible; the soft gate only makes
+    it unlikely. If the two agree, the result is about how many short-range
+    relationships survive; if they disagree, long-range bridges matter.
+    """
+    rows, raw = [], []
+    for gate in ("hard", "soft"):
+        r, w = substrate_sweep(
+            G0, "geo", noise_levels, draws, repeats, workers, max_steps,
+            patience, base_seed, keep=keep, space=space, gate=gate,
+            economy_scaling=economy_scaling, r_min=r_min)
+        rows += r
+        raw += w
+    return rows, raw
+
+
+def space_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
+                     patience, base_seed, keep=DEFAULT_KEEP, gate="hard",
+                     economy_scaling="fixed", r_min=None):
+    """
+    Flat map against a map with no corners.
+
+    On a flat map the nations nearest the corners have fewer neighbours within
+    any radius, which is a property of the map rather than of geography in
+    general. The torus arm removes that boundary effect, so any difference is
+    the boundary, not the mechanism.
+    """
+    rows, raw = [], []
+    for space in ("plane", "torus"):
+        r, w = substrate_sweep(
+            G0, "geo", noise_levels, draws, repeats, workers, max_steps,
+            patience, base_seed, keep=keep, space=space, gate=gate,
+            economy_scaling=economy_scaling, r_min=r_min)
+        rows += r
+        raw += w
+    return rows, raw
+
+
+def economy_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
+                       patience, base_seed, keep=DEFAULT_KEEP, space="plane",
+                       gate="hard", r_min=None):
+    """
+    Two strong economies against a lognormal economy for every nation.
+
+    With two strong nations out of eight there is only one strong-strong pair,
+    so the fixed tiers keep the draws comparable; the random arm checks whether
+    the conclusion depends on that choice.
+    """
+    rows, raw = [], []
+    for scaling in ("fixed", "random"):
+        r, w = substrate_sweep(
+            G0, "geo", noise_levels, draws, repeats, workers, max_steps,
+            patience, base_seed, keep=keep, space=space, gate=gate,
+            economy_scaling=scaling, r_min=r_min)
+        rows += r
+        raw += w
+    return rows, raw
+
+
+# ---------------------------------------------------------------------------
+# 6. HOW FAR THE GATE IS CLOSED: THE KEEP SWEEP
+# ---------------------------------------------------------------------------
+
+def keep_experiment(G0, noise_levels, draws, repeats, workers, max_steps,
+                    patience, base_seed, keeps=None, space="plane", gate="hard",
+                    economy_scaling="fixed"):
+    """
+    Close the gate further and further and compare with random thinning.
+
+    This is the arm that separates "the thinning is spatial" from "there are
+    simply fewer relationships". At a mild gate the two substrates can look
+    identical because both keep a similar number of closed triads; the question
+    is whether they separate as more relationships are removed. The real
+    snapshot is included at keep = 1.0 as the reference point.
+    """
+    keeps = list(keeps) if keeps is not None else list(KEEP_LEVELS)
+    rows, raw = [], []
+    for keep in keeps + [1.0]:
+        kinds = ("real",) if keep >= 1.0 else ("random", "geo")
+        r_min = None
+        if keep < 1.0:
+            r_min = geo.calibrate_r_min(G0, target_keep=keep,
+                                        probes=CALIBRATION_PROBES,
+                                        seed=base_seed, space=space,
+                                        economy_scaling=economy_scaling)
+        for kind in kinds:
+            r, w = substrate_sweep(
+                G0, kind, noise_levels, draws, repeats, workers, max_steps,
+                patience, base_seed, keep=keep, space=space, gate=gate,
+                economy_scaling=economy_scaling, r_min=r_min)
+            rows += r
+            raw += w
+        print("      keep %.2f done (r_min %s)" % (
+            keep, "n/a" if r_min is None else "%.3f" % r_min))
+    return rows, raw
+
+
+# ---------------------------------------------------------------------------
+# 7. PLOTTING AND OUTPUT
+# ---------------------------------------------------------------------------
+
+def _band(ax, rows, label, colour, style="-"):
+    """Draw one arm: pooled settling rate with the spread over draws."""
+    ordered = sorted(rows, key=lambda r: r["noise"])
+    xs = [r["noise"] for r in ordered]
+    ys = [r["conv_rate"] for r in ordered]
+    if len(ordered) >= MIN_DRAWS_FOR_BAND:
+        ax.fill_between(xs, [r["draw_rate_lo"] for r in ordered],
+                        [r["draw_rate_hi"] for r in ordered],
+                        color=colour, alpha=0.15)
+    band = " (shaded: spread over position draws)" if len(ordered) >= MIN_DRAWS_FOR_BAND else ""
+    ax.plot(xs, ys, style, marker="o", color=colour, label=label + band)
+
+
+def plot_by_key(rows, key, title, path, use_inertia=None):
+    """Settling rate against noise, one line per value of `key`."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    colours = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple"]
+    values = sorted({r[key] for r in rows}, key=str)
+    for index, value in enumerate(values):
+        subset = [r for r in rows if r[key] == value and
+                  (use_inertia is None or r["inertia"] == use_inertia)]
+        if subset:
+            _band(ax, subset, str(value), colours[index % len(colours)])
+    ax.set(xlabel="Noise level", ylabel="Fraction of runs that settled",
+           title=title, ylim=(-0.05, 1.05))
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def plot_inertia(rows, title, path):
+    """Inertia on and off, for the real and the gated substrate."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    styles = {(False, "real"): ("tab:blue", "--"), (True, "real"): ("tab:blue", "-"),
+              (False, "geo"): ("tab:orange", "--"), (True, "geo"): ("tab:orange", "-")}
+    for (inertia, substrate), (colour, style) in styles.items():
+        subset = [r for r in rows if r["inertia"] == inertia
+                  and r["substrate"] == substrate]
+        if subset:
+            _band(ax, subset, "%s, %s" % (substrate, "inertia" if inertia else "no inertia"),
+                  colour, style)
+    ax.set(xlabel="Noise level", ylabel="Fraction of runs that settled",
+           title=title, ylim=(-0.05, 1.05))
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def plot_structure(rows, key, title, path):
+    """Edges, triangles and components of each arm, as grouped bars."""
+    values = sorted({r[key] for r in rows}, key=str)
+    first = [next(r for r in rows if r[key] == value) for value in values]
+    metrics = ["mean_edges", "mean_triangles", "mean_components"]
+    fig, ax = plt.subplots(figsize=(7.5, 4.5))
+    width = 0.8 / len(metrics)
+    for index, metric in enumerate(metrics):
+        positions = [i + index * width for i in range(len(values))]
+        ax.bar(positions, [row[metric] for row in first], width=width,
+               label=metric.replace("mean_", ""))
+    ax.set_xticks([i + width for i in range(len(values))], [str(v) for v in values])
+    ax.set(ylabel="count (mean over position draws)", title=title)
+    ax.grid(alpha=0.3, axis="y")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def plot_keep_sweep(rows, title, path):
+    """
+    What the gate keeps, and what that does to noise tolerance.
+
+    Left: closed triads as more relationships are removed. Right: settling rate
+    at each noise level, with the spread over position draws shaded.
+    """
+    keeps = sorted({r["keep"] for r in rows})
+    noises = sorted({r["noise"] for r in rows})
+    colours = {"real": "tab:grey", "random": "tab:blue", "geo": "tab:orange"}
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+
+    for kind in ("real", "random", "geo"):
+        triads = []
+        xs = []
+        for keep in keeps:
+            match = [r for r in rows if r["keep"] == keep and r["substrate"] == kind]
+            if match:
+                xs.append(keep)
+                triads.append(match[0]["mean_triangles"])
+        if xs:
+            ax1.plot(xs, triads, "o-", color=colours[kind], label=kind)
+    ax1.set(xlabel="share of relationships kept",
+            ylabel="closed triads (mean over draws)", title="What the gate keeps")
+
+    for kind in ("random", "geo"):
+        for index, noise in enumerate(noises):
+            xs, ys, lows, highs = [], [], [], []
+            for keep in keeps:
+                match = [r for r in rows if r["keep"] == keep
+                         and r["substrate"] == kind and r["noise"] == noise]
+                if match:
+                    row = match[0]
+                    xs.append(keep)
+                    ys.append(row["conv_rate"])
+                    lows.append(row["draw_rate_lo"])
+                    highs.append(row["draw_rate_hi"])
+            if xs:
+                style = "--" if index else "-"
+                ax2.plot(xs, ys, style, marker="o", color=colours[kind],
+                         label="%s, noise %g" % (kind, noise))
+                ax2.fill_between(xs, lows, highs, color=colours[kind], alpha=0.12)
+    ax2.set(xlabel="share of relationships kept",
+            ylabel="fraction of runs that settled", ylim=(-0.05, 1.05),
+            title="Noise tolerance as the gate closes")
+
+    for ax in (ax1, ax2):
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=8)
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
