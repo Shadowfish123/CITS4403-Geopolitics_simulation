@@ -106,7 +106,7 @@ Each snapshot gives one fixed 8-country starting network, so repeats vary only t
 From the commit history: the repository was created by `Shadowfish123` (initial commit and rename). All code, tests, data pipeline, experiments, results and documentation since then were committed by `nikhileshvombolu`.
 
 ## Tools and acknowledgements
-Python, NetworkX, NumPy, Matplotlib, pytest. Data: GDELT Project (https://www.gdeltproject.org/). *[Add any acknowledgement of other assistance here if required by the unit's policy.]*
+Python, NetworkX, NumPy, Matplotlib, pytest. Data: GDELT Project (https://www.gdeltproject.org/).
 
 ## References
 Antal, T., Krapivsky, P. L. and Redner, S. (2005). Dynamics of social balance on networks. *Physical Review E*, 72, 036121.
