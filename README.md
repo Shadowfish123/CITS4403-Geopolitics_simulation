@@ -103,7 +103,7 @@ Raw files (`data/raw_*.csv`) contain real country codes and are git-ignored. Fet
 Each snapshot gives one fixed 8-country starting network, so repeats vary only the random dynamics and results describe these snapshots. Tone comes from news wording, which skews negative, so signs are a media-based proxy for relationships, not diplomatic fact. Mention volume is a rough proxy for how established a relationship is. Computation time grows quickly with network size.
 
 ## Contributions
-From the commit history: the repository was created by `Shadowfish123` (initial commit and rename). All code, tests, data pipeline, experiments, results and documentation since then were committed by `nikhileshvombolu`.
+The repository was created by Shadowfish123 (initial commit and rename). Shadowfish123 also helped with the coding, writing an exploratory geography-layer module (`src/geography.py`) on the separate branch `Experimental-geography-extension`, and drafted the first version of the project report. That branch is not merged, and nothing in the reported results depends on it. All other code, tests, the data pipeline, experiments, results and documentation on `main` were committed by nikhileshvombolu.
 
 ## Tools and acknowledgements
 Python, NetworkX, NumPy, Matplotlib, pytest. Data: GDELT Project (https://www.gdeltproject.org/).
